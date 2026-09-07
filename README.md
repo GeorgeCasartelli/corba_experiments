@@ -17,4 +17,15 @@ g++ -o client client.cpp testSK.cc -lomniORB4 -lomnithread
 ./client
 ```
 
-Should see heartbeat then timeout after 10 counts
+Once running heartbeat should register. 
+
+To check timeouts, do 
+
+```bash
+ps aux | grep server.py
+kill -STOP <pid>
+```
+
+And then after 3 ticks you will see the "greet" command is run and the timeout is different.
+
+
