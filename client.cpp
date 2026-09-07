@@ -2,7 +2,9 @@
 #include <iostream>
 #include <fstream>
 #include <omniORB4/Naming.hh>
+#include <omniORB4/omniORB.h>
 #include <unistd.h>
+#include <chrono>
 
 int main(int argc, char** argv) {
     int argc2 = 3;
@@ -49,19 +51,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // resolve heartbeat
-    CosNaming::Name name_heartbeat;
-    name_heartbeat.length(1);
-    name_heartbeat[0].id = CORBA::string_dup("Heartbeat");
-    name_heartbeat[0].kind = CORBA::string_dup("");
     
-    CORBA::Object_var obj_heartbeat;
-    try {
-        obj_heartbeat = nc->resolve(name_heartbeat);
-    } catch (const CosNaming::NamingContext::NotFound&) {
-        std::cerr << "Name 'Heartbeat' not found in Naming Service" << std::endl;
-        return 1;
-    }
+
+    // resolve heartbeat
+    // CosNaming::Name name_heartbeat;
+    // name_heartbeat.length(1);
+    // name_heartbeat[0].id = CORBA::string_dup("Heartbeat");
+    // name_heartbeat[0].kind = CORBA::string_dup("");
+    
+    // CORBA::Object_var obj_heartbeat;
+    // try {
+    //     obj_heartbeat = nc->resolve(name_heartbeat);
+    // } catch (const CosNaming::NamingContext::NotFound&) {
+    //     std::cerr << "Name 'Heartbeat' not found in Naming Service" << std::endl;
+    //     return 1;
+    // }
     
     Demo::Hello_var hello = Demo::Hello::_narrow(obj_hello);
     omniORB::setClientCallTimeout(hello, 6000);
@@ -71,29 +75,24 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    Demo::Heartbeat_var heartbeat = Demo::Heartbeat::_narrow(obj_heartbeat);
-    omniORB::setClientCallTimeout(heartbeat, 2000);
-    if (CORBA::is_nil(heartbeat)) {
-        std::cerr << "Failed to narrow heartbeat object reference" << std::endl;
-        return 1;
-    }
+    CORBA::Object_var heartbeat_ref = nc->resolve(name_hello);
+    // CORBA::Object_var heartbeat_ref = CORBA::Object::_duplicate(hello);
+    omniORB::setClientCallTimeout(heartbeat_ref, 2000);
+
+    // Demo::Heartbeat_var heartbeat = Demo::Heartbeat::_narrow(obj_heartbeat);
+    // omniORB::setClientCallTimeout(heartbeat, 2000);
+    // if (CORBA::is_nil(heartbeat)) {
+    //     std::cerr << "Failed to narrow heartbeat object reference" << std::endl;
+    //     return 1;
+    // }
 
     // hello calls
     try {
-        CORBA::String_var result = hello->greet("Magic");
+        CORBA::String_var result = hello->greet("John");
         std::cout << result << std::endl;
     } catch (const Demo::Hello::InvalidName& ex) {
         std::cerr << "Server rejected name: " << ex.reason << std::endl;
     }
-
-    // try {
-    //     CORBA::String_var result = hello->slowCall(5); // 10s sleep
-    //     std::cout << result << std::endl;
-    // } catch (const CORBA::TIMEOUT&) {
-    //     std::cerr << "Call timed out!" << std::endl;
-    // } catch (const CORBA::TRANSIENT&) {
-    //     std::cerr << "Call timed out (older style TRANSIENT)!" << std::endl;
-    // }
 
     std::cout << hello->add(5, 7) << std::endl;
 
@@ -102,35 +101,74 @@ int main(int argc, char** argv) {
 
     std::cout << hello->greet(person->name) << std::endl;
 
-    int count = 0;
-    bool delaySet = false;
-    heartbeat->resetDelay();
-    // heartbeat calls
-    while (true) {
-        std::cout<<"Count: " << count << std::endl;
-        if (count > 10 && !delaySet) {
-            try {
-                heartbeat->setDelay(5);
-            } catch (const CORBA::SystemException&) {
-                std::cerr << "setDelay call failed" << std::endl;
-            }
-            delaySet = true;
+    // --== dedicate heartbeat routine ==--
+    // int count = 0;
+    // bool delaySet = false;
+    // heartbeat->resetDelay();
+    
+    // while (true) {
+    //     std::cout<<"Count: " << count << std::endl;
+    //     if (count > 10 && !delaySet) {
+    //         try {
+    //             heartbeat->setDelay(5);
+    //         } catch (const CORBA::SystemException&) {
+    //             std::cerr << "setDelay call failed" << std::endl;
+    //         }
+    //         delaySet = true;
             
-        }
-        try {
-            CORBA::String_var result = heartbeat->ping();
-            std::cout << "Heartbeat OK: " << result << std::endl;
-        } catch (const CORBA::TIMEOUT&) {
-            std::cerr << "Heartbeat TIMEOUT!" << std::endl;
-            break;
-        } catch (const CORBA::TRANSIENT&) {
-            std::cerr << "Call timed out (older style TRANSIENT)!" << std::endl;
-        } catch (const CORBA::COMM_FAILURE&) {
-            std::cerr << "Heartbeat COMM_FAILURE" << std::endl;
-        }
+    //     }
+    //     try {
+    //         CORBA::String_var result = heartbeat->ping();
+    //         std::cout << "Heartbeat OK: " << result << std::endl;
+    //     } catch (const CORBA::TIMEOUT&) {
+    //         std::cerr << "Heartbeat TIMEOUT!" << std::endl;
+    //         break;
+    //     } catch (const CORBA::TRANSIENT&) {
+    //         std::cerr << "Call timed out (older style TRANSIENT)!" << std::endl;
+    //     } catch (const CORBA::COMM_FAILURE&) {
+    //         std::cerr << "Heartbeat COMM_FAILURE" << std::endl;
+    //     }
 
+    //     sleep(1);
+    //     count++;
+    // }
+
+
+    // --== HEARTBEAT ROUTINE USING _non_existent ==--
+    
+    int count = 0;
+    int failures = 0;
+    while (true) {
+        std::cout << "Count: " << count << std::endl;
+
+        try {
+            CORBA::Boolean gone = heartbeat_ref->_non_existent();
+            if (gone) {
+                std::cerr << "Object gone" << std::endl;
+            } else {
+                std::cout << "Heartbeat strong. Object exists" <<std::endl;
+                failures = 0;
+            }
+        } catch (const CORBA::TIMEOUT&) {
+            std::cerr << "Heartbeat timed out after 2s" << std::endl;
+            failures++;
+        } 
+
+        if (failures >=3 ) {
+            std::cout << "Hearbeat failed >3 times. Testing hello timeout" << std::endl;
+
+            auto start = std::chrono::steady_clock::now();
+            try {
+                CORBA::String_var result = hello->greet("George");
+                std::cout << "Unexpected success: " << result << std::endl;
+            } catch (const CORBA::SystemException& ex) {
+                auto end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration<double>(end - start).count();
+                std::cout << ">>> Original 'hello' reference failed after "
+                        << elapsed << " seconds (exception: " << ex._name() << ")" << std::endl;
+            }
+        }
         sleep(1);
         count++;
     }
-    
 }
