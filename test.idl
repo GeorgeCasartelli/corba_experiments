@@ -1,0 +1,28 @@
+module Demo {
+	struct Person {
+		string name;
+		long age;
+	};
+
+	interface Heartbeat {
+		string ping();
+		void resetDelay();
+		void setDelay(in long seconds);
+	};
+
+	interface Hello {
+
+		exception InvalidName {
+			string reason;
+		};
+
+		string greet(in string name)
+			raises (InvalidName);
+		
+		long add(in long a, in long b);
+		Person makePerson(in string name, in long age);
+		string slowCall(in long delaySeconds);
+	};
+
+
+};
