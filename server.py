@@ -49,9 +49,9 @@ heartbeat_servant = Heartbeat_i()
 heartbeat_obj = heartbeat_servant._this()
 
 
-# ior = orb.object_to_string(hello_obj)
-# with open("test_py.ior", "w") as f:
-#     f.write(ior)
+ior = orb.object_to_string(hello_obj)
+with open("ior_file.ior", "w") as f:
+    f.write(ior)
 
 # get naming service
 naming_obj = orb.resolve_initial_references("NameService")
@@ -63,7 +63,7 @@ naming_context.rebind(hello_name, hello_obj)
 heartbeat_name = [CosNaming.NameComponent("Heartbeat", "")]
 naming_context.rebind(heartbeat_name, heartbeat_obj)
 
-print("Python server ready. Bound as \"Hello\" in the Naming Service")
+print("Python server ready. Bound as \"Hello\" in the Naming Service or read from \"ior_file.ior\" if using ior file")
 
 poa._get_the_POAManager().activate()
 orb.run()

@@ -5,88 +5,66 @@
 #include <omniORB4/omniORB.h>
 #include <unistd.h>
 #include <chrono>
+#include <vector>
+
 
 int main(int argc, char** argv) {
+
+    // set global timeout. default 60s. set here to 10s
     int argc2 = 3;
     char* argv2[] = { argv[0], (char*)"-ORBclientCallTimeOutPeriod", (char*)"10000" };
-    // CORBA::ORB_var orb = CORBA::ORB_init(argc, argv); // start ORB
+
     CORBA::ORB_var orb = CORBA::ORB_init(argc2, argv2);
 
-    // std::ifstream iorFile;
-
-    // iorFile.open("test_py.ior");
-    // std::string text;
-    // if (iorFile.is_open()) {
-        
-    //     std::getline(iorFile, text);
-
-    //     // std::cout << text << std::endl;
-    //     iorFile.close();
-    // }
-    // else {
-    //     std::cout << "ERROR: File not open" << std::endl;
-    // }
-
-    // CORBA::Object_var obj = orb->string_to_object(text.c_str());
+    // resolving naming service
     
-    CORBA::Object_var nsobj = orb->resolve_initial_references("NameService");
-    CosNaming::NamingContext_var nc = CosNaming::NamingContext::_narrow(nsobj);
-
-    if (CORBA::is_nil(nc)) {
-        std::cerr << "Failed to narrow NamingContext" << std::endl;
-        return 1;
-    }
-
-    // resolve hello
-    CosNaming::Name name_hello;
-    name_hello.length(1);
-    name_hello[0].id = CORBA::string_dup("Hello");
-    name_hello[0].kind = CORBA::string_dup("");
-
-    CORBA::Object_var obj_hello;
-    try {
-        obj_hello = nc->resolve(name_hello);
-    } catch (const CosNaming::NamingContext::NotFound&) {
-        std::cerr << "Name 'Hello' not found in Naming Service" << std::endl;
-        return 1;
-    }
-
-    
-
-    // resolve heartbeat
-    // CosNaming::Name name_heartbeat;
-    // name_heartbeat.length(1);
-    // name_heartbeat[0].id = CORBA::string_dup("Heartbeat");
-    // name_heartbeat[0].kind = CORBA::string_dup("");
-    
-    // CORBA::Object_var obj_heartbeat;
-    // try {
-    //     obj_heartbeat = nc->resolve(name_heartbeat);
-    // } catch (const CosNaming::NamingContext::NotFound&) {
-    //     std::cerr << "Name 'Heartbeat' not found in Naming Service" << std::endl;
+    // CORBA::Object_var nsobj = orb->resolve_initial_references("NameService");
+    // CosNaming::NamingContext_var nc = CosNaming::NamingContext::_narrow(nsobj);
+    // if (CORBA::is_nil(nc)) {
+    //     std::cerr << "Failed to narrow NamingContext" << std::endl;
     //     return 1;
     // }
-    
-    Demo::Hello_var hello = Demo::Hello::_narrow(obj_hello);
-    omniORB::setClientCallTimeout(hello, 6000);
 
+    // // resolve hello interface
+    // CosNaming::Name hello_name;
+    // hello_name.length(1);
+    // hello_name[0].id = CORBA::string_dup("Hello");
+    // hello_name[0].kind = CORBA::string_dup("");
+
+    // CosNaming::Name heartbeat_name;
+    // heartbeat_name.length(1);
+    // heartbeat_name[0].id = CORBA::string_dup("Hello"); // same target, diff name obj
+    // heartbeat_name[0].kind = CORBA::string_dup("");
+
+    std::ifstream iorFile("ior_file.ior");
+    std::string ior;
+    std::getline(iorFile, ior);
+    iorFile.close();
+
+    // reference 1 for function calls with lenient timeout
+    CORBA::Object_var obj_hello = orb->string_to_object(ior.c_str());
+    Demo::Hello_var hello = Demo::Hello::_narrow(obj_hello);
     if (CORBA::is_nil(hello)) {
         std::cerr << "Failed to narrow object reference" << std::endl;
         return 1;
     }
+    omniORB::setClientCallTimeout(hello, 6000); // more lenient 6s timeout
 
-    CORBA::Object_var heartbeat_ref = nc->resolve(name_hello);
-    // CORBA::Object_var heartbeat_ref = CORBA::Object::_duplicate(hello);
-    omniORB::setClientCallTimeout(heartbeat_ref, 2000);
+    // resolve from same interface, but used only for heartbeat check
 
-    // Demo::Heartbeat_var heartbeat = Demo::Heartbeat::_narrow(obj_heartbeat);
-    // omniORB::setClientCallTimeout(heartbeat, 2000);
-    // if (CORBA::is_nil(heartbeat)) {
-    //     std::cerr << "Failed to narrow heartbeat object reference" << std::endl;
-    //     return 1;
-    // }
+    CORBA::Object_var heartbeat_ref = orb->string_to_object(ior.c_str());
+    // CORBA::Object_var heartbeat_ref = nc->resolve(hello_name);
+    omniORB::setClientCallTimeout(heartbeat_ref, 2000); // shorter (2s), fails faster
 
-    // hello calls
+    // address check. independent local objects, same remote object
+    std::cout << "obj_hello address: " << (void*)obj_hello.in() << std::endl;
+    std::cout << "heartbeat_ref address: " << (void*)heartbeat_ref.in() << std::endl;
+
+    CORBA::Boolean same = obj_hello->_is_equivalent(heartbeat_ref);
+    std::cout << "Same remote object? " << (same ? "yes" : "no") << std::endl;
+
+
+    // hello calls checking orb server working for func calls
     try {
         CORBA::String_var result = hello->greet("John");
         std::cout << result << std::endl;
@@ -98,46 +76,24 @@ int main(int argc, char** argv) {
 
     Demo::Person_var person = hello->makePerson("Charlie", 26);
     std::cout << person->name << ", " << person-> age << std::endl;
-
     std::cout << hello->greet(person->name) << std::endl;
 
-    // --== dedicate heartbeat routine ==--
-    // int count = 0;
-    // bool delaySet = false;
-    // heartbeat->resetDelay();
-    
-    // while (true) {
-    //     std::cout<<"Count: " << count << std::endl;
-    //     if (count > 10 && !delaySet) {
-    //         try {
-    //             heartbeat->setDelay(5);
-    //         } catch (const CORBA::SystemException&) {
-    //             std::cerr << "setDelay call failed" << std::endl;
-    //         }
-    //         delaySet = true;
-            
-    //     }
-    //     try {
-    //         CORBA::String_var result = heartbeat->ping();
-    //         std::cout << "Heartbeat OK: " << result << std::endl;
-    //     } catch (const CORBA::TIMEOUT&) {
-    //         std::cerr << "Heartbeat TIMEOUT!" << std::endl;
-    //         break;
-    //     } catch (const CORBA::TRANSIENT&) {
-    //         std::cerr << "Call timed out (older style TRANSIENT)!" << std::endl;
-    //     } catch (const CORBA::COMM_FAILURE&) {
-    //         std::cerr << "Heartbeat COMM_FAILURE" << std::endl;
-    //     }
-
-    //     sleep(1);
-    //     count++;
-    // }
 
 
     // --== HEARTBEAT ROUTINE USING _non_existent ==--
-    
+    // shorter timeout
+    // to show behaviour find server PID and `kill -STOP <pid>` to freeze,
+    // then `-CONT` to continue. 
+    //
+    // After 3 failures, tries to run hello->greet() on original ref
+    // also get a timer. should hang for as long as defined previous
+    // 
+    // Proves independence between two references
+
+
     int count = 0;
     int failures = 0;
+
     while (true) {
         std::cout << "Count: " << count << std::endl;
 
@@ -150,7 +106,7 @@ int main(int argc, char** argv) {
                 failures = 0;
             }
         } catch (const CORBA::TIMEOUT&) {
-            std::cerr << "Heartbeat timed out after 2s" << std::endl;
+            std::cerr << "Heartbeat timed out after ~2s" << std::endl;
             failures++;
         } 
 
@@ -167,6 +123,7 @@ int main(int argc, char** argv) {
                 std::cout << ">>> Original 'hello' reference failed after "
                         << elapsed << " seconds (exception: " << ex._name() << ")" << std::endl;
             }
+            failures = 0; // reset loop
         }
         sleep(1);
         count++;
